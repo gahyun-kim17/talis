@@ -1,0 +1,414 @@
+---
+title: "talis_kor"
+author: "Gahyun_Kim"
+date: "6/13/2021"
+output: word_document
+---
+
+
+# Hypotheses
+H1: Beginning teachers have a lower personal utility motivation than expert teachers.
+H2: Beginning teachers have a lower social utility motivation than expert teachers.
+H3: Personal utility motivation has a negative relationship with job satisfaction in beginning teachers and expert teachers.
+H4: Social utility motivation has a positive relationship with job satisfaction in beginning teacher and expert teacher.
+
+```{r}
+library(haven)
+library(tidyverse)
+library(dplyr)
+library(effectsize)
+library(visdat)
+library(ggpubr)
+library(lsr)
+library(ggpubr)
+library(ggplot2)
+library(gridExtra)
+library(rstatix)
+library(ggcorrplot)
+library(performance)
+library(car)
+```
+
+# Read dataset
+```{r}
+df <- read_sav("ATGKORT3.sav")
+```
+
+# Visualize missing values
+```{r}
+vis_miss(df, warn_large_data = FALSE)
+
+# selected variables of interest
+df %>% 
+  select(T3PERUT, T3SOCUT, T3JOBSA, TT3G11B) %>% 
+  vis_miss()
+```
+
+# Create 'tch_year' column
+```{r}
+df <- df %>% 
+  mutate(tch_year = ifelse(TT3G11B <= 5, "beginning", "expert"))
+```
+
+# Check sample size
+```{r}
+df %>% 
+  count(tch_year)
+```
+
+# Omit NA in tch_year (tch_year must be presented for analysis)
+```{r}
+df <- df %>% 
+  filter(tch_year == "beginning"|tch_year =="expert")
+```
+
+# Descriptive statistics for variable of interest
+```{r}
+df %>% 
+  group_by(tch_year) %>% 
+  summarise(personal_mean = mean(T3PERUT, na.rm = T), personal_sd = sd(T3PERUT, na.rm = T), social_mean = mean(T3SOCUT, na.rm = T), social_sd = sd(T3SOCUT, na.rm = T), jobsa_mean = mean(T3JOBSA, na.rm = T), jobsa_sd = sd(T3JOBSA, na.rm = T))
+```
+
+# Correlation
+```{r}
+corrmat <- df %>% 
+  select(T3PERUT, T3SOCUT, T3JOBSA) %>% 
+  cor(use = "complete.obs", method = c("pearson"))
+corrmat
+```
+
+```{r}
+ggcorrplot(corrmat, type = "lower", lab = T, hc.order = TRUE)
+```
+
+
+# MANOVA analysis
+```{r}
+mod <- manova(cbind(T3PERUT, T3SOCUT)~tch_year, data = df)
+mod
+```
+
+# Visualize the mean differences in two motivation
+```{r}
+# Sepal Length & Width
+p1 <- ggplot(df, aes(x=tch_year, y=T3PERUT, na.rm = T), aes(fill = factor(tch_year))) +
+       geom_boxplot(aes(fill = factor(tch_year))) +  
+        guides(fill=guide_legend(title="Group")) +
+  theme(legend.position = "none") +
+  xlab("Teacher group") + ylab("Personal utility motivation")
+
+p2 <- ggplot(df, aes(x=tch_year, y=T3SOCUT), aes(fill = factor(tch_year))) +
+         geom_boxplot(aes(fill = factor(tch_year))) +  
+        guides(fill=guide_legend(title="Teacher group")) +
+  theme(legend.position = "none")+
+  xlab("Teacher group") + ylab("Social utility motivation")
+
+grid.arrange(p1, p2, ncol=2, nrow=1)
+```
+
+# t-test
+```{r}
+df %>% 
+  group_by(tch_year) %>% 
+  summarise(statistic = shapiro.test(T3PERUT)$statistic,
+            p_value = shapiro.test(T3SOCUT)$p.value)
+```
+# Check assumptions
+## Outliers
+### Univariate outliers
+```{r}
+df %>%
+  select(tch_year, T3PERUT) %>% 
+  group_by(tch_year) %>%
+  identify_outliers("T3PERUT")
+```
+
+```{r}
+df %>%
+  select(tch_year, T3SOCUT) %>% 
+  group_by(tch_year) %>%
+  identify_outliers("T3SOCUT")
+```
+
+### Multivariate outliers
+```{r}
+df %>%
+  select(T3PERUT | T3SOCUT | tch_year) %>%
+  group_by(tch_year) %>%
+  mahalanobis_distance() %>%
+  filter(is.outlier == TRUE) %>%
+  as.data.frame()
+```
+1. There were no univariate extreme outliers in the personal utility motivation and social utility motivation.
+2. There were no multivariate outliers in the data, as assessed by Mahalanobis distance (p > 0.001).
+
+
+## Normality
+### Univariate normality
+```{r}
+df %>%
+  group_by(tch_year) %>%
+  shapiro_test(T3PERUT, T3SOCUT) %>%
+  arrange(variable)
+```
+
+
+
+```{r}
+ggqqplot(df, "T3PERUT", facet.by = "tch_year",
+         ylab = "T3PERUT", ggtheme = theme_bw())
+```
+```{r}
+df %>% 
+  ggplot(aes(x = T3PERUT)) +
+  facet_wrap(.~tch_year) +
+  geom_histogram()
+```
+
+
+```{r}
+ggqqplot(df, "T3SOCUT", facet.by = "tch_year",
+         ylab = "T3SOCUT", ggtheme = theme_bw())
+```
+
+```{r}
+df %>% 
+  ggplot(aes(x = T3SOCUT)) +
+  facet_wrap(.~tch_year) +
+  geom_histogram()
+```
+
+### Multivariate normality
+```{r}
+df %>%
+  select(T3PERUT, T3SOCUT) %>%
+  mshapiro_test()
+```
+
+1. Personal utility and social utility motivations were not normally distributed for each teacher groups, as assessed by Shapiro-Wilk’s test and qq plots (p < .05).
+2. We can not assume multivariate normality (p < .05).
+
+## Multicollinearity
+
+```{r}
+df %>% cor_test(T3PERUT, T3SOCUT)
+```
+There was no multicollinearity, as assessed by Pearson correlation (r = 0.3, p < .05).
+
+## Linearity
+```{r}
+install.packages("GGally")
+library(GGally)
+results <- df %>%
+  select(T3PERUT, T3SOCUT, tch_year) %>%
+  group_by(tch_year) %>%
+  doo(~ggpairs(.) + theme_bw(), result = "plots")
+results
+```
+
+
+```{r}
+ggscatter(df, x = "T3PERUT", y = "T3SOCUT", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson")
+# correlated -> MANOVA
+```
+
+```{r}
+cor.test(df$T3PERUT, df$T3SOCUT, method = "pearson")
+```
+
+
+# Correlation between motivation and job satisfaction
+```{r}
+corrmat <- df %>% 
+  select(T3PERUT, T3SOCUT, T3JOBSA) %>% 
+  cor()
+corrmat
+```
+
+```{r}
+ggcorrplot(corrmat,
+           type = "lower",
+           hc.order = TRUE,
+           lab = TRUE,
+           digits = 2)
+```
+
+
+
+
+# Check assumptions for MANOVA
+## Adequate sample size. Rule of thumb: the n in each cell > the number of outcome variables (3)
+
+## Independence of the observations. Each subject should belong to only one group. There is no relationship between the observations in each group. Having repeated measures for the same participants is not allowed. The selection of the sample should be completely random.
+
+## Absense of univariate or multivariate outliers.
+## Multivariate normality. The R function mshapiro_test( )[in the rstatix package] can be used to perform the Shapiro-Wilk test for multivariate normality.
+## Absence of multicollinearity. The dependent (outcome) variables cannot be too correlated to each other. No correlation should be above r = 0.90 [Tabachnick and Fidell (2012)}.
+## Linearity between all outcome variables for each group.
+## Homogeneity of variances. The Levene’s test can be used to test the equality of variances between groups. Non-significant values of Levene’s test indicate equal variance between groups.
+## Homogeneity of variance-covariance matrices. The Box’s M Test can be used to check the equality of covariance between the groups. This is the equivalent of a multivariate homogeneity of variance. This test is considered as highly sensitive. Therefore, significance for this test is determined at alpha = 0.001
+
+
+
+
+
+```{r}
+plot(mod)
+```
+
+```{r}
+summary(mod, test = 'Wilks', intercept = TRUE)
+```
+
+```{r}
+summary(mod, test = 'Roy', intercept = TRUE)
+```
+
+```{r}
+summary(mod, test = 'Hotelling-Lawley', intercept = TRUE)
+```
+
+```{r}
+summary(mod, test = 'Pillai', intercept = TRUE)
+```
+
+```{r}
+summary.aov(mod)
+```
+
+
+```{r}
+effectsize(mod)
+```
+
+# Correlation between variables
+
+```{r}
+corrmat_b <- df %>%
+  filter(tch_year == "beginning") %>% 
+  select(T3PERUT, T3SOCUT, T3JOBSA) %>% 
+  cor(use = "complete.obs", method = c("pearson"))
+corrmat_b
+```
+
+```{r}
+ggcorrplot(corrmat_b, type = "lower", lab = T, hc.order = TRUE)
+```
+
+```{r}
+corrmat_e <- df %>%
+  filter(tch_year == "expert") %>% 
+  select(T3PERUT, T3SOCUT, T3JOBSA) %>% 
+  cor(use = "complete.obs", method = c("pearson"))
+corrmat_e
+```
+
+```{r}
+ggcorrplot(corrmat_e, type = "lower", lab = T, hc.order = TRUE)
+```
+
+```{r}
+lm_perut <- lm(T3JOBSA ~ T3PERUT + T3SOCUT, df_begin)
+summary(lm_perut)
+```
+
+```{r}
+lm_socut <- lm(T3JOBSA ~ T3SOCUT, df_exp)
+summary(lm_socut)
+```
+
+```{r}
+df %>% 
+  ggplot(aes(x=T3PERUT, y=T3JOBSA, color=tch_year)) +
+  geom_point() + 
+  geom_smooth(method=lm, se=FALSE, fullrange=TRUE)
+```
+
+```{r}
+df %>% 
+  ggplot(aes(x = T3PERUT, y = T3JOBSA)) +
+  facet_wrap(.~tch_year) +
+  geom_point(size = 1, alpha = 1/7) +
+  geom_smooth(method = lm) +
+  labs(x = "Personal utility motivation", y = "Job satisfaction") +
+  stat_cor(method = "pearson", label.x = 5, label.y = 18)
+```
+```{r}
+df %>% 
+  ggplot(aes(x = T3SOCUT, y = T3JOBSA)) +
+  facet_wrap(.~tch_year) +
+  geom_point(size = 1, alpha = 1/7) +
+  geom_smooth(method = lm) +
+  labs(x = "Social utility motivation", y = "Job satisfaction") +
+  stat_cor(method = "pearson", label.x = 5, label.y = 18)
+```
+
+```{r}
+t.test(T3PERUT ~ tch_year, df)
+```
+
+```{r}
+cohen.d(T3PERUT ~ tch_year, df)
+```
+
+```{r}
+t.test(T3SOCUT ~ tch_year, df)
+```
+
+```{r}
+cohen.d(T3SOCUT ~ tch_year, df)
+```
+
+```{r}
+t.test(T3JOBSA ~ tch_year, df)
+```
+
+
+```{r}
+df_begin <- df %>% 
+  filter(tch_year == "beginning teacher")
+df_exp <- df %>% 
+  filter(tch_year == "experienced teacher")
+```
+
+```{r}
+cor_begin_perut <- cor.test(df_begin$T3PERUT, df_begin$T3JOBSA, method = "pearson")
+cor_begin_perut
+```
+
+```{r}
+cor_begin_perut_socut <- cor.test(df_begin$T3PERUT, df_begin$T3SOCUT, method = "pearson")
+cor_begin_perut_socut
+```
+
+```{r}
+cor_begin_socut <- cor.test(df_begin$T3SOCUT, df_begin$T3JOBSA, method = "pearson")
+cor_begin_socut
+```
+
+```{r}
+cor_exp_perut <- cor.test(df_exp$T3PERUT, df_exp$T3JOBSA, method = "pearson")
+cor_exp_perut
+```
+
+```{r}
+cor_exp_socut <- cor.test(df_exp$T3SOCUT, df_exp$T3JOBSA, method = "pearson")
+cor_exp_socut
+```
+```{r}
+cor_exp_socut_perut <- cor.test(df_exp$T3SOCUT, df_exp$T3PERUT, method = "pearson")
+cor_exp_socut_perut
+```
+
+```{r}
+cor_socut_perut <- cor.test(df$T3SOCUT, df$T3PERUT, method = "pearson")
+cor_socut_perut
+```
+
+```{r}
+write_sav(df, "df.sav")
+```
+
+
